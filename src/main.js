@@ -8,6 +8,9 @@ const game = new Game($('app'), {
   hotbar: $('hotbar'),
   blockName: $('block-name'),
   debug: $('debug'),
+  toggleSettings: $('toggle-settings'),
+  settingsView: $('settings-view'),
+  controlsView: $('controls-view'),
 });
 window.__game = game;
 game.start();

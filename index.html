@@ -21,19 +21,25 @@
   <div id="overlay">
     <div class="panel">
       <h1 id="overlay-title">Voxel Test</h1>
-      <button id="play" type="button">Click to play</button>
-      <dl class="controls">
-        <dt>W A S D</dt><dd>Move</dd>
-        <dt>Mouse</dt><dd>Look</dd>
-        <dt>Space</dt><dd>Jump</dd>
-        <dt>Ctrl</dt><dd>Sprint (while moving forward)</dd>
-        <dt>Shift</dt><dd>Sneak (crouch, won't walk off edges)</dd>
-        <dt>Left click</dt><dd>Break block</dd>
-        <dt>Right click</dt><dd>Place block</dd>
-        <dt>1–8 / Wheel</dt><dd>Choose block</dd>
-        <dt>Esc</dt><dd>Pause</dd>
-      </dl>
-      <p class="note">Desktop only. Press Ctrl after W, not before: Ctrl+W closes the tab in most browsers.</p>
+      <div class="actions">
+        <button id="play" type="button">Click to play</button>
+        <button id="toggle-settings" type="button" class="secondary">Settings</button>
+      </div>
+      <div id="controls-view">
+        <dl class="controls">
+          <dt>W A S D</dt><dd>Move</dd>
+          <dt>Mouse</dt><dd>Look</dd>
+          <dt>Space</dt><dd>Jump</dd>
+          <dt>Ctrl</dt><dd>Sprint (while moving forward)</dd>
+          <dt>Shift</dt><dd>Sneak (crouch, won't walk off edges)</dd>
+          <dt>Left click</dt><dd>Break block</dd>
+          <dt>Right click</dt><dd>Place block</dd>
+          <dt>1–8 / Wheel</dt><dd>Choose block</dd>
+          <dt>Esc</dt><dd>Pause and settings</dd>
+        </dl>
+        <p class="note">Desktop only. Press Ctrl after W, not before: Ctrl+W closes the tab in most browsers.</p>
+      </div>
+      <div id="settings-view" hidden></div>
     </div>
   </div>
   <div id="boot-error" hidden></div>
