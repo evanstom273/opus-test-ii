@@ -31,7 +31,14 @@ in the style of the Distant Horizons and Voxy mods for Minecraft (`src/lod.js`, 
 - Where real chunks are drawn, a per-chunk mask hides the LOD in the shader. In the outermost ring
   of loaded chunks the LOD stays just below the blocks, so the seam never shows sky.
 
-Fog only fades the far edge of the distant terrain (1, 2 or 4 km).
+Fog only fades the far edge of the distant terrain (1, 2 or 4 km). It is measured by horizontal
+distance, like Minecraft's, so the ground below stays clear however high you fly.
+
+## Flight
+
+Creative flight works like Minecraft's: double-tap Space (within 0.3 s) to take off or drop.
+Flying speed is about 11 blocks/s, or 22 with Ctrl; Space and Shift move straight up and down at 7.5 blocks/s.
+You still collide with blocks, and touching down on the ground ends flight.
 
 Desktop only for now. Needs a browser with WebGL.
 
@@ -56,6 +63,9 @@ If the frame rate is low, lower **Distant detail** first.
 | W A S D | Move |
 | Mouse | Look |
 | Space | Jump |
+| Space twice quickly | Start or stop flying (creative flight) |
+| Space / Shift while flying | Fly up / down |
+| Ctrl while flying | Fly fast (about double speed) |
 | Ctrl | Sprint (hold while moving forward; lasts until you stop) |
 | Shift | Sneak: crouch, move slowly, and don't walk off edges |
 | Left click | Break block (bedrock can't be broken) |

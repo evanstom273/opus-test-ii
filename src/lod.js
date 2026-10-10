@@ -28,6 +28,7 @@ const VERTEX = /* glsl */ `
     vWorldXZ = world.xz;
     vec4 mvPosition = viewMatrix * world;
     gl_Position = projectionMatrix * mvPosition;
+    vec3 transformed = position;
     #include <fog_vertex>
   }
 `;
