@@ -1,5 +1,5 @@
-// First-person player: mouse look, walking, sprinting, sneaking, jumping and
-// axis-by-axis collision against the voxel grid.
+// First-person player: mouse look, walking, sprinting, sneaking, jumping,
+// creative flight, and axis-by-axis collision against the voxel grid.
 const WIDTH = 0.6;
 const HEIGHT_STAND = 1.8;
 const HEIGHT_SNEAK = 1.5;
@@ -14,6 +14,12 @@ const JUMP_VELOCITY = 9;
 const MAX_FALL = 60;
 const SENSITIVITY = 0.0022;
 
+// Creative flight, matching Minecraft's speeds (blocks per second).
+const FLY_SPEED = 10.9;
+const FLY_SPRINT = 21.6;
+const FLY_VERTICAL = 7.5;
+const DOUBLE_TAP = 0.3;          // seconds between Space taps to toggle flight
+
 export class Player {
   constructor(world, x, y, z) {
     this.world = world;
@@ -24,6 +30,8 @@ export class Player {
     this.onGround = true;            // spawns standing on the surface
     this.sprinting = false;
     this.sneaking = false;
+    this.flying = false;
+    this._lastSpaceTap = -1;
     this.height = HEIGHT_STAND;
     this.eye = EYE_STAND;
     this.sensitivity = 1;            // multiplier from the settings menu
@@ -45,9 +53,24 @@ export class Player {
   update(dt, input) {
     const fwd = (input.down('KeyW') ? 1 : 0) - (input.down('KeyS') ? 1 : 0);
     const strafe = (input.down('KeyD') ? 1 : 0) - (input.down('KeyA') ? 1 : 0);
+    const space = input.down('Space');
+    const shift = input.down('ShiftLeft', 'ShiftRight');
 
-    // Sneak, but only stand back up when there's headroom.
-    const wantSneak = input.down('ShiftLeft', 'ShiftRight');
+    // Double-tap Space toggles flight.
+    if (input.hit('Space')) {
+      const now = performance.now() / 1000;
+      if (now - this._lastSpaceTap < DOUBLE_TAP) {
+        this.flying = !this.flying;
+        if (this.flying) this.vel.y = Math.max(this.vel.y, 0);
+        this._lastSpaceTap = -1;
+      } else {
+        this._lastSpaceTap = now;
+      }
+    }
+
+    // Sneak on foot (Shift descends while flying), but only stand back up
+    // when there's headroom.
+    const wantSneak = shift && !this.flying;
     if (wantSneak) this.sneaking = true;
     else if (this.sneaking && !this._collides(this.pos.x, this.pos.y, this.pos.z, HEIGHT_STAND)) this.sneaking = false;
     this.height = this.sneaking ? HEIGHT_SNEAK : HEIGHT_STAND;
@@ -58,7 +81,9 @@ export class Player {
     if (input.down('ControlLeft', 'ControlRight') && fwd > 0 && !this.sneaking) this.sprinting = true;
     if (fwd <= 0 || this.sneaking) this.sprinting = false;
 
-    const speed = this.sneaking ? SPEED_SNEAK : this.sprinting ? SPEED_SPRINT : SPEED_WALK;
+    const speed = this.flying
+      ? (this.sprinting ? FLY_SPRINT : FLY_SPEED)
+      : this.sneaking ? SPEED_SNEAK : this.sprinting ? SPEED_SPRINT : SPEED_WALK;
     let mx = 0, mz = 0;
     if (fwd || strafe) {
       const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
@@ -69,18 +94,27 @@ export class Player {
       mx = (mx / len) * speed;
       mz = (mz / len) * speed;
     }
-    const accel = this.onGround ? 18 : 5;
+    // Flight glides a little: slower to reach speed and to stop than walking.
+    const accel = this.flying ? 6 : this.onGround ? 18 : 5;
     const k = Math.min(1, dt * accel);
     this.vel.x += (mx - this.vel.x) * k;
     this.vel.z += (mz - this.vel.z) * k;
 
-    if (this.onGround && input.down('Space')) {
-      this.vel.y = JUMP_VELOCITY;
-      this.onGround = false;
+    if (this.flying) {
+      const vy = (space ? FLY_VERTICAL : 0) - (shift ? FLY_VERTICAL : 0);
+      this.vel.y += (vy - this.vel.y) * Math.min(1, dt * 10);
+    } else {
+      if (this.onGround && space) {
+        this.vel.y = JUMP_VELOCITY;
+        this.onGround = false;
+      }
+      this.vel.y = Math.max(-MAX_FALL, this.vel.y - GRAVITY * dt);
     }
-    this.vel.y = Math.max(-MAX_FALL, this.vel.y - GRAVITY * dt);
 
     this._move(dt);
+
+    // Touching down ends flight, as in Minecraft.
+    if (this.flying && this.onGround) this.flying = false;
 
     // Fell through the bottom somehow (shouldn't happen with bedrock): reset.
     if (this.pos.y < -20) {

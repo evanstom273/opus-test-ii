@@ -11,6 +11,14 @@ import { Sky, HORIZON } from './sky.js';
 
 const REACH = 5;
 
+// Fog by horizontal distance (cylindrical, like Minecraft): the edge of the
+// world fades out, but the ground below stays clear however high you fly.
+THREE.ShaderChunk.fog_vertex = /* glsl */ `
+#ifdef USE_FOG
+  vFogDepth = length((modelMatrix * vec4(transformed, 1.0)).xz - cameraPosition.xz);
+#endif
+`;
+
 // Voxel raycast (Amanatides & Woo). Returns the first solid block within
 // `max` and the empty block in front of the face that was hit.
 export function raycast(world, origin, dir, max) {
@@ -168,7 +176,7 @@ export class Game {
 
     this.camera.position.set(player.pos.x, player.eyeY, player.pos.z);
     this.camera.rotation.set(player.pitch, player.yaw, 0);
-    const fov = this.baseFov + (player.sprinting ? 8 : 0);
+    const fov = this.baseFov + (player.sprinting ? (player.flying ? 16 : 8) : 0);
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 10);
       this.camera.updateProjectionMatrix();
@@ -256,7 +264,8 @@ export class Game {
       this._fpsAcc = 0;
       this._fpsFrames = 0;
       const p = this.player;
-      const state = p.sneaking ? 'Sneaking' : p.sprinting ? 'Sprinting' : p.onGround ? 'Walking' : 'Airborne';
+      const state = p.flying ? (p.sprinting ? 'Flying fast' : 'Flying')
+        : p.sneaking ? 'Sneaking' : p.sprinting ? 'Sprinting' : p.onGround ? 'Walking' : 'Airborne';
       const w = this.world.terrain.regionWeights(p.pos.x, p.pos.z);
       const region = w.mountains > 0.5 ? 'Mountains' : w.plains > 0.5 ? 'Plains' : 'Hills';
       this.ui.debug.textContent =
