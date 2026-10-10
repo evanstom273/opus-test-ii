@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Voxel Test</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js" } }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="hud">
+    <div id="crosshair"></div>
+    <div id="debug"></div>
+    <div id="block-name"></div>
+    <div id="hotbar"></div>
+  </div>
+  <div id="overlay">
+    <div class="panel">
+      <h1 id="overlay-title">Voxel Test</h1>
+      <button id="play" type="button">Click to play</button>
+      <dl class="controls">
+        <dt>W A S D</dt><dd>Move</dd>
+        <dt>Mouse</dt><dd>Look</dd>
+        <dt>Space</dt><dd>Jump</dd>
+        <dt>Ctrl</dt><dd>Sprint (while moving forward)</dd>
+        <dt>Shift</dt><dd>Sneak (crouch, won't walk off edges)</dd>
+        <dt>Left click</dt><dd>Break block</dd>
+        <dt>Right click</dt><dd>Place block</dd>
+        <dt>1–8 / Wheel</dt><dd>Choose block</dd>
+        <dt>Esc</dt><dd>Pause</dd>
+      </dl>
+      <p class="note">Desktop only. Press Ctrl after W, not before: Ctrl+W closes the tab in most browsers.</p>
+    </div>
+  </div>
+  <div id="boot-error" hidden></div>
+  <script>
+    (function () {
+      var box = document.getElementById('boot-error');
+      function show(msg) { box.hidden = false; box.textContent += (box.textContent ? '\n' : '') + msg; }
+      window.addEventListener('error', function (e) { show('Error: ' + (e.message || e)); });
+      window.addEventListener('unhandledrejection', function (e) { show('Error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason)); });
+      setTimeout(function () { if (!window.__game) show('The game did not start. A desktop browser with WebGL is required.'); }, 10000);
+    })();
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
