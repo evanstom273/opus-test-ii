@@ -7,6 +7,8 @@ import { Terrain, columnBlock } from './terrain.js';
 export const CHUNK = 16;    // chunk width and depth
 export const HEIGHT = 256;  // world height in blocks
 
+export const MASK_SIZE = 64; // chunks covered by the drawn-chunk mask (per side)
+
 const key = (cx, cz) => `${cx},${cz}`;
 const idx = (x, y, z) => (y * CHUNK + z) * CHUNK + x;
 
@@ -45,6 +47,11 @@ export class World {
     this.chunks = new Map();  // key -> { cx, cz, data, mesh, dirty }
     this.saved = new Map();   // edited chunk data kept after a chunk unloads
     this.columns = new Map(); // key -> heights and surface blocks, cached
+    // Which chunks around the player have a block mesh. Distant terrain is
+    // hidden over exactly these chunks so the two never overlap.
+    this.mask = new Uint8Array(MASK_SIZE * MASK_SIZE);
+    this.maskOrigin = { x: 0, z: 0 };
+    this.maskDirty = true;
     this.material = new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true });
     this.loadQueue = [];
   }
@@ -126,6 +133,7 @@ export class World {
         if (c.mesh) {
           this.scene.remove(c.mesh);
           c.mesh.geometry.dispose();
+          this._setMask(c.cx, c.cz, 0);
         }
         this.chunks.delete(k);
       }
@@ -137,6 +145,11 @@ export class World {
     if (pcx !== this._lastCx || pcz !== this._lastCz) {
       this._lastCx = pcx;
       this._lastCz = pcz;
+      this.maskOrigin.x = pcx - MASK_SIZE / 2;
+      this.maskOrigin.z = pcz - MASK_SIZE / 2;
+      this.mask.fill(0);
+      for (const c of this.chunks.values()) if (c.mesh) this._setMask(c.cx, c.cz, 1);
+      this.maskDirty = true;
       this.loadQueue = [];
       for (let dz = -r; dz <= r; dz++) {
         for (let dx = -r; dx <= r; dx++) {
@@ -189,6 +202,21 @@ export class World {
 
   get loadedCount() {
     return this.chunks.size;
+  }
+
+  // Mask values: 0 = no block mesh, 255 = block mesh (distant terrain is
+  // hidden there), 128 = block mesh in the outermost loaded ring (distant
+  // terrain stays, just below the blocks, so the seam never shows sky).
+  _setMask(cx, cz, on) {
+    const x = cx - this.maskOrigin.x, z = cz - this.maskOrigin.z;
+    if (x < 0 || z < 0 || x >= MASK_SIZE || z >= MASK_SIZE) return;
+    let v = 0;
+    if (on) {
+      const dx = x - MASK_SIZE / 2, dz = z - MASK_SIZE / 2, r = this.renderDistance - 1;
+      v = dx * dx + dz * dz <= r * r + r ? 255 : 128;
+    }
+    this.mask[z * MASK_SIZE + x] = v;
+    this.maskDirty = true;
   }
 
   // Lowest air block in the chunk's own columns and the ring of columns
@@ -296,6 +324,7 @@ export class World {
     } else {
       c.mesh = new THREE.Mesh(geo, this.material);
       this.scene.add(c.mesh);
+      this._setMask(c.cx, c.cz, 1);
     }
   }
 }

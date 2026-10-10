@@ -3,7 +3,16 @@
 const STORAGE_KEY = 'voxel-test-settings';
 
 export const SETTINGS = [
-  { id: 'renderDistance', label: 'Render distance', type: 'range', min: 2, max: 16, step: 1, value: 8, unit: ' chunks' },
+  { id: 'renderDistance', label: 'Block render distance', type: 'range', min: 2, max: 16, step: 1, value: 8, unit: ' chunks' },
+  {
+    id: 'distantTerrain', label: 'Distant terrain', type: 'select', value: 2048,
+    options: [[0, 'Off'], [1024, '1 km'], [2048, '2 km'], [4096, '4 km']],
+  },
+  {
+    id: 'lodDetail', label: 'Distant detail', type: 'select', value: 2.25,
+    options: [[1.5, 'Low'], [2.25, 'Medium'], [3, 'High']],
+  },
+  { id: 'fog', label: 'Fog', type: 'checkbox', value: true },
   { id: 'fov', label: 'Field of view', type: 'range', min: 50, max: 110, step: 1, value: 75, unit: '°' },
   { id: 'sensitivity', label: 'Mouse sensitivity', type: 'range', min: 10, max: 300, step: 5, value: 100, unit: '%' },
   { id: 'invertY', label: 'Invert mouse Y', type: 'checkbox', value: false },
@@ -16,7 +25,11 @@ export class Settings {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
       for (const s of SETTINGS) {
-        if (typeof saved[s.id] === typeof s.value) this.values[s.id] = saved[s.id];
+        const v = saved[s.id];
+        if (typeof v !== typeof s.value) continue;
+        if (s.type === 'select' && !s.options.some(([o]) => o === v)) continue;
+        if (s.type === 'range' && (v < s.min || v > s.max)) continue;
+        this.values[s.id] = v;
       }
     } catch (e) { /* storage unavailable: use defaults */ }
     this.listeners = [];
@@ -51,9 +64,13 @@ export class Settings {
       const name = document.createElement('span');
       name.className = 'setting-name';
       name.textContent = s.label;
-      const input = document.createElement('input');
+      const input = document.createElement(s.type === 'select' ? 'select' : 'input');
       input.id = `set-${s.id}`;
-      input.type = s.type;
+      if (s.type === 'select') {
+        for (const [value, text] of s.options) input.add(new Option(text, value));
+      } else {
+        input.type = s.type;
+      }
       if (s.type === 'range') {
         input.min = s.min;
         input.max = s.max;
@@ -66,12 +83,14 @@ export class Settings {
         if (s.type === 'range') {
           input.value = this.values[s.id];
           out.textContent = `${this.values[s.id]}${s.unit}`;
+        } else if (s.type === 'select') {
+          input.value = String(this.values[s.id]);
         } else {
           input.checked = this.values[s.id];
         }
       };
       input.addEventListener('input', () => {
-        this.set(s.id, s.type === 'range' ? Number(input.value) : input.checked);
+        this.set(s.id, s.type === 'checkbox' ? input.checked : Number(input.value));
         show();
       });
       show();

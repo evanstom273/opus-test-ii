@@ -6,11 +6,11 @@
 //  - base: OpenSimplex2 fBm for ordinary hills, valleys and elevation.
 //  - ridge: ridged multifractal that gives mountains sharp crests.
 import { fbm, ridged } from './noise.js';
-import { GRASS, DIRT, STONE, BEDROCK, AIR } from './blocks.js';
+import { GRASS, DIRT, STONE, BEDROCK, AIR } from './ids.js';
 
 export const SEA_LEVEL = 64;   // reference elevation for the plains
 const MAX_Y = 250;
-const ROCK_LINE = 168;         // bare stone above this height
+export const ROCK_LINE = 168;  // bare stone above this height
 const CLIFF_SLOPE = 3;         // height step to a neighbour that exposes stone
 const DIRT_DEPTH = 3;
 
