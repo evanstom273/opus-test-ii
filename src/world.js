@@ -1,32 +1,26 @@
 // Infinite chunked voxel world: generation, block edits, meshing and
 // streaming chunks in and out around the player.
 import * as THREE from 'three';
-import { AIR, BLOCKS, GRASS, DIRT, STONE, BEDROCK, TILE, ATLAS_TILES } from './blocks.js';
+import { AIR, BLOCKS, TILE, ATLAS_TILES } from './blocks.js';
+import { Terrain, columnBlock } from './terrain.js';
 
-export const CHUNK = 16;   // chunk width and depth
-export const HEIGHT = 64;  // world height in blocks
-export const GROUND = 8;   // y of the first air block above the flat surface
+export const CHUNK = 16;    // chunk width and depth
+export const HEIGHT = 256;  // world height in blocks
 
 const key = (cx, cz) => `${cx},${cz}`;
+const idx = (x, y, z) => (y * CHUNK + z) * CHUNK + x;
 
-// Flat world: bedrock, stone, dirt, then grass on top.
-function generateBlock(y) {
-  if (y === 0) return BEDROCK;
-  if (y < GROUND - 3) return STONE;
-  if (y < GROUND - 1) return DIRT;
-  if (y === GROUND - 1) return GRASS;
-  return AIR;
-}
-
-function generateChunk() {
+function generateChunk(cols) {
   const data = new Uint8Array(CHUNK * CHUNK * HEIGHT);
-  for (let y = 0; y < GROUND; y++) {
-    data.fill(generateBlock(y), y * CHUNK * CHUNK, (y + 1) * CHUNK * CHUNK);
+  for (let z = 0; z < CHUNK; z++) {
+    for (let x = 0; x < CHUNK; x++) {
+      const i = z * CHUNK + x;
+      const h = cols.heights[i], top = cols.top[i];
+      for (let y = 0; y <= h; y++) data[idx(x, y, z)] = columnBlock(y, h, top);
+    }
   }
   return data;
 }
-
-const idx = (x, y, z) => (y * CHUNK + z) * CHUNK + x;
 
 // Six faces: normal, the four corners (counter-clockwise seen from outside),
 // and a brightness factor so faces read clearly without real lighting.
@@ -44,13 +38,21 @@ const TOP_UV = [[0, 0], [1, 0], [1, 1], [0, 1]];
 const AO_LEVELS = [0.5, 0.68, 0.84, 1.0];
 
 export class World {
-  constructor(scene, atlasTexture, renderDistance = 8) {
+  constructor(scene, atlasTexture, renderDistance = 8, seed = 1) {
     this.scene = scene;
     this.renderDistance = renderDistance;
+    this.terrain = new Terrain(seed);
     this.chunks = new Map();  // key -> { cx, cz, data, mesh, dirty }
     this.saved = new Map();   // edited chunk data kept after a chunk unloads
+    this.columns = new Map(); // key -> heights and surface blocks, cached
     this.material = new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true });
     this.loadQueue = [];
+  }
+
+  setRenderDistance(r) {
+    if (r === this.renderDistance) return;
+    this.renderDistance = r;
+    this._lastCx = undefined; // rebuild the load queue on the next update
   }
 
   getBlock(x, y, z) {
@@ -60,7 +62,27 @@ export class World {
     if (c) return c.data[idx(x - cx * CHUNK, y, z - cz * CHUNK)];
     const saved = this.saved.get(key(cx, cz));
     if (saved) return saved[idx(x - cx * CHUNK, y, z - cz * CHUNK)];
-    return generateBlock(y);
+    const cols = this._columns(cx, cz);
+    const i = (z - cz * CHUNK) * CHUNK + (x - cx * CHUNK);
+    return columnBlock(y, cols.heights[i], cols.top[i]);
+  }
+
+  // Generated surface height at a column (ignores player edits).
+  surfaceHeight(x, z) {
+    const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
+    return this._columns(cx, cz).heights[(z - cz * CHUNK) * CHUNK + (x - cx * CHUNK)];
+  }
+
+  _columns(cx, cz) {
+    const k = key(cx, cz);
+    let cols = this.columns.get(k);
+    if (!cols) {
+      cols = this.terrain.chunkColumns(cx, cz, CHUNK);
+      cols.cx = cx;
+      cols.cz = cz;
+      this.columns.set(k, cols);
+    }
+    return cols;
   }
 
   setBlock(x, y, z, id) {
@@ -91,12 +113,15 @@ export class World {
 
   // Load chunks near the player (closest first), unload far ones, and rebuild
   // a bounded number of meshes per frame to keep frame times steady.
-  update(px, pz) {
+  update(px, pz, budgetMs = 6) {
     const pcx = Math.floor(px / CHUNK), pcz = Math.floor(pz / CHUNK);
     const r = this.renderDistance;
 
     for (const [k, c] of this.chunks) {
-      if (Math.abs(c.cx - pcx) > r + 1 || Math.abs(c.cz - pcz) > r + 1) {
+      // Unload a ring further out than chunks load, so chunks at the edge
+      // don't flicker in and out as you walk back and forth.
+      const dx = c.cx - pcx, dz = c.cz - pcz;
+      if (dx * dx + dz * dz > (r + 1) * (r + 1) + r + 1) {
         if (c.edited) this.saved.set(k, c.data);
         if (c.mesh) {
           this.scene.remove(c.mesh);
@@ -104,6 +129,9 @@ export class World {
         }
         this.chunks.delete(k);
       }
+    }
+    for (const [k, cols] of this.columns) {
+      if (Math.abs(cols.cx - pcx) > r + 3 || Math.abs(cols.cz - pcz) > r + 3) this.columns.delete(k);
     }
 
     if (pcx !== this._lastCx || pcz !== this._lastCz) {
@@ -124,7 +152,7 @@ export class World {
       const [cx, cz] = this.loadQueue.pop();
       const k = key(cx, cz);
       if (this.chunks.has(k)) continue;
-      const data = this.saved.get(k) || generateChunk();
+      const data = this.saved.get(k) || generateChunk(this._columns(cx, cz));
       const edited = this.saved.has(k);
       this.saved.delete(k);
       this.chunks.set(k, { cx, cz, data, mesh: null, dirty: true, edited });
@@ -134,7 +162,18 @@ export class World {
     const dirty = [];
     for (const c of this.chunks.values()) if (c.dirty) dirty.push(c);
     dirty.sort((a, b) => ((a.cx - pcx) ** 2 + (a.cz - pcz) ** 2) - ((b.cx - pcx) ** 2 + (b.cz - pcz) ** 2));
-    for (let i = 0; i < Math.min(8, dirty.length); i++) this._buildMesh(dirty[i]);
+    const start = performance.now();
+    for (let i = 0; i < dirty.length; i++) {
+      this._buildMesh(dirty[i]);
+      if (performance.now() - start > budgetMs) break;
+    }
+  }
+
+  // True once every chunk in range is loaded and meshed.
+  get settled() {
+    if (this.loadQueue.length) return false;
+    for (const c of this.chunks.values()) if (c.dirty) return false;
+    return true;
   }
 
   // Rebuild one chunk immediately (used right after a player edit).
@@ -150,6 +189,32 @@ export class World {
 
   get loadedCount() {
     return this.chunks.size;
+  }
+
+  // Lowest air block in the chunk's own columns and the ring of columns
+  // around it (from neighbouring chunks).
+  _lowestAir(c) {
+    let low = HEIGHT;
+    const scan = (data, x, z) => {
+      for (let y = 1; y < low; y++) {
+        if (data[idx(x, y, z)] === AIR) { low = y; return; }
+      }
+    };
+    for (let z = 0; z < CHUNK; z++) for (let x = 0; x < CHUNK; x++) scan(c.data, x, z);
+    const sides = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dz] of sides) {
+      const ncx = c.cx + dx, ncz = c.cz + dz, k = key(ncx, ncz);
+      const n = this.chunks.get(k);
+      const data = n ? n.data : this.saved.get(k);
+      for (let i = 0; i < CHUNK; i++) {
+        // the column of the neighbour that touches this chunk
+        const x = dx === -1 ? CHUNK - 1 : dx === 1 ? 0 : i;
+        const z = dz === -1 ? CHUNK - 1 : dz === 1 ? 0 : i;
+        if (data) scan(data, x, z);
+        else low = Math.min(low, this._columns(ncx, ncz).heights[z * CHUNK + x] + 1);
+      }
+    }
+    return low;
   }
 
   _buildMesh(c) {
@@ -170,8 +235,11 @@ export class World {
     for (let i = data.length - 1; i >= 0; i--) {
       if (data[i] !== AIR) { topY = Math.floor(i / (CHUNK * CHUNK)); break; }
     }
+    // Below the lowest air in this chunk and its bordering columns, every
+    // block is buried on all six sides, so the scan can start just under it.
+    const startY = Math.max(0, this._lowestAir(c) - 1);
 
-    for (let y = 0; y <= topY; y++) {
+    for (let y = startY; y <= topY; y++) {
       for (let z = 0; z < CHUNK; z++) {
         for (let x = 0; x < CHUNK; x++) {
           const id = data[idx(x, y, z)];

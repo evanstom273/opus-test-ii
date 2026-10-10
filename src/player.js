@@ -26,6 +26,8 @@ export class Player {
     this.sneaking = false;
     this.height = HEIGHT_STAND;
     this.eye = EYE_STAND;
+    this.sensitivity = 1;            // multiplier from the settings menu
+    this.invertY = false;
   }
 
   get eyeY() {
@@ -33,8 +35,9 @@ export class Player {
   }
 
   look(dx, dy) {
-    this.yaw -= dx * SENSITIVITY;
-    this.pitch -= dy * SENSITIVITY;
+    const k = SENSITIVITY * this.sensitivity;
+    this.yaw -= dx * k;
+    this.pitch -= dy * k * (this.invertY ? -1 : 1);
     const lim = Math.PI / 2 - 0.001;
     this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
   }
@@ -81,7 +84,7 @@ export class Player {
 
     // Fell through the bottom somehow (shouldn't happen with bedrock): reset.
     if (this.pos.y < -20) {
-      this.pos.y = 40;
+      this.pos.y = this.world.surfaceHeight(Math.floor(this.pos.x), Math.floor(this.pos.z)) + 1;
       this.vel.y = 0;
     }
   }

@@ -1,10 +1,11 @@
 // Game loop: renderer, camera, world streaming, block targeting, breaking and
 // placing, and the HUD.
 import * as THREE from 'three';
-import { World, GROUND } from './world.js';
+import { World } from './world.js';
 import { Player } from './player.js';
 import { Input } from './input.js';
 import { AIR, BLOCKS, HOTBAR, createAtlas, blockIcon } from './blocks.js';
+import { Settings } from './settings.js';
 
 const REACH = 5;
 const SKY = 0x9ccbf2;
@@ -52,10 +53,16 @@ export class Game {
 
     const atlas = createAtlas();
     this.atlas = atlas;
-    this.world = new World(this.scene, atlas.texture, 8);
-    this.scene.fog = new THREE.Fog(SKY, this.world.renderDistance * 16 * 0.55, this.world.renderDistance * 16 * 0.95);
-    this.player = new Player(this.world, 0.5, GROUND, 0.5);
+    // ?seed=123 in the URL picks a different world.
+    const seedParam = parseInt(new URLSearchParams(location.search).get('seed'), 10);
+    this.seed = Number.isFinite(seedParam) ? seedParam : 20261010;
+    this.settings = new Settings();
+    this.world = new World(this.scene, atlas.texture, this.settings.get('renderDistance'), this.seed);
+    this.scene.fog = new THREE.Fog(SKY, 1, 2);
+    this.player = new Player(this.world, 0.5, this.world.surfaceHeight(0, 0) + 1, 0.5);
     this.input = new Input(renderer.domElement);
+    this._applySettings();
+    this.settings.onChange(() => this._applySettings());
 
     // Outline around the block you're looking at.
     const box = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.004, 1.004, 1.004));
@@ -75,9 +82,22 @@ export class Game {
       ui.overlayTitle.textContent = this.started ? 'Paused' : 'Voxel Test';
       ui.play.textContent = this.started ? 'Resume' : 'Click to play';
     };
-    ui.overlay.addEventListener('click', () => {
+    // Play, or a click on the dimmed backdrop, starts the game; clicks inside
+    // the panel (settings) don't.
+    const play = () => {
       this.started = true;
       this.input.lock();
+    };
+    ui.play.addEventListener('click', play);
+    ui.overlay.addEventListener('click', (e) => {
+      if (e.target === ui.overlay) play();
+    });
+    this.settings.buildPanel(ui.settingsView);
+    ui.toggleSettings.addEventListener('click', () => {
+      const open = ui.settingsView.hidden;
+      ui.settingsView.hidden = !open;
+      ui.controlsView.hidden = open;
+      ui.toggleSettings.textContent = open ? 'Controls' : 'Settings';
     });
     renderer.domElement.addEventListener('click', () => {
       if (!this.input.locked) this.input.lock();
@@ -94,9 +114,22 @@ export class Game {
     this.last = performance.now();
   }
 
+  _applySettings() {
+    const s = this.settings;
+    const rd = s.get('renderDistance');
+    this.world.setRenderDistance(rd);
+    // Fog hides the edge of the loaded area.
+    this.scene.fog.near = rd * 16 * 0.6;
+    this.scene.fog.far = rd * 16 * 0.95;
+    this.baseFov = s.get('fov');
+    this.player.sensitivity = s.get('sensitivity') / 100;
+    this.player.invertY = s.get('invertY');
+    this.ui.debug.hidden = !s.get('showDebug');
+  }
+
   start() {
     // Load the chunks around spawn before the first frame so the world is there.
-    for (let i = 0; i < 40; i++) this.world.update(this.player.pos.x, this.player.pos.z);
+    for (let i = 0; i < 200 && !this.world.settled; i++) this.world.update(this.player.pos.x, this.player.pos.z, 1000);
     const loop = () => {
       requestAnimationFrame(loop);
       const now = performance.now();
@@ -207,9 +240,11 @@ export class Game {
       this._fpsFrames = 0;
       const p = this.player;
       const state = p.sneaking ? 'Sneaking' : p.sprinting ? 'Sprinting' : p.onGround ? 'Walking' : 'Airborne';
+      const w = this.world.terrain.regionWeights(p.pos.x, p.pos.z);
+      const region = w.mountains > 0.5 ? 'Mountains' : w.plains > 0.5 ? 'Plains' : 'Hills';
       this.ui.debug.textContent =
         `${this.fps} fps · XYZ ${p.pos.x.toFixed(1)} ${p.pos.y.toFixed(1)} ${p.pos.z.toFixed(1)} · ` +
-        `${this.world.loadedCount} chunks · ${state}`;
+        `${region} · ${this.world.loadedCount} chunks · ${state} · seed ${this.seed}`;
     }
   }
 

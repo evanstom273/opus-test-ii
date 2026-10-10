@@ -1,0 +1,94 @@
+// Player settings: defaults, persistence in localStorage, and the settings
+// panel shown on the pause screen.
+const STORAGE_KEY = 'voxel-test-settings';
+
+export const SETTINGS = [
+  { id: 'renderDistance', label: 'Render distance', type: 'range', min: 2, max: 16, step: 1, value: 8, unit: ' chunks' },
+  { id: 'fov', label: 'Field of view', type: 'range', min: 50, max: 110, step: 1, value: 75, unit: '°' },
+  { id: 'sensitivity', label: 'Mouse sensitivity', type: 'range', min: 10, max: 300, step: 5, value: 100, unit: '%' },
+  { id: 'invertY', label: 'Invert mouse Y', type: 'checkbox', value: false },
+  { id: 'showDebug', label: 'Show debug info', type: 'checkbox', value: true },
+];
+
+export class Settings {
+  constructor() {
+    this.values = Object.fromEntries(SETTINGS.map((s) => [s.id, s.value]));
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      for (const s of SETTINGS) {
+        if (typeof saved[s.id] === typeof s.value) this.values[s.id] = saved[s.id];
+      }
+    } catch (e) { /* storage unavailable: use defaults */ }
+    this.listeners = [];
+  }
+
+  get(id) {
+    return this.values[id];
+  }
+
+  set(id, value) {
+    this.values[id] = value;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.values)); } catch (e) { /* ignore */ }
+    for (const fn of this.listeners) fn(id, value);
+  }
+
+  onChange(fn) {
+    this.listeners.push(fn);
+  }
+
+  reset() {
+    for (const s of SETTINGS) this.set(s.id, s.value);
+  }
+
+  // Build the controls into `container`. Returns a function that refreshes
+  // the controls from the current values.
+  buildPanel(container) {
+    container.innerHTML = '';
+    const rows = SETTINGS.map((s) => {
+      const row = document.createElement('label');
+      row.className = `setting setting-${s.type}`;
+      row.htmlFor = `set-${s.id}`;
+      const name = document.createElement('span');
+      name.className = 'setting-name';
+      name.textContent = s.label;
+      const input = document.createElement('input');
+      input.id = `set-${s.id}`;
+      input.type = s.type;
+      if (s.type === 'range') {
+        input.min = s.min;
+        input.max = s.max;
+        input.step = s.step;
+      }
+      const out = document.createElement('output');
+      out.className = 'setting-value';
+      out.htmlFor = input.id;
+      const show = () => {
+        if (s.type === 'range') {
+          input.value = this.values[s.id];
+          out.textContent = `${this.values[s.id]}${s.unit}`;
+        } else {
+          input.checked = this.values[s.id];
+        }
+      };
+      input.addEventListener('input', () => {
+        this.set(s.id, s.type === 'range' ? Number(input.value) : input.checked);
+        show();
+      });
+      show();
+      row.append(name, input);
+      if (s.type === 'range') row.append(out);
+      container.append(row);
+      return show;
+    });
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'link-button';
+    reset.textContent = 'Reset to defaults';
+    reset.addEventListener('click', () => {
+      this.reset();
+      rows.forEach((show) => show());
+    });
+    container.append(reset);
+    return () => rows.forEach((show) => show());
+  }
+}
