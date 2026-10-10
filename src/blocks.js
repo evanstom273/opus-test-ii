@@ -1,7 +1,9 @@
 // Block types and a procedurally painted texture atlas (16x16 pixel tiles).
 import * as THREE from 'three';
 
-export const AIR = 0;
+import { AIR, GRASS, DIRT, STONE, BEDROCK } from './ids.js';
+
+export { AIR, GRASS, DIRT, STONE, BEDROCK };
 
 // tiles: [top, side, bottom] atlas indices
 export const BLOCKS = [
@@ -16,8 +18,6 @@ export const BLOCKS = [
   { id: 8, name: 'Sand', tiles: [9, 9, 9] },
   { id: 9, name: 'Bedrock', tiles: [10, 10, 10], unbreakable: true },
 ];
-
-export const GRASS = 1, DIRT = 2, STONE = 3, BEDROCK = 9;
 
 // Blocks offered in the hotbar, in slot order.
 export const HOTBAR = [1, 2, 3, 4, 5, 6, 7, 8];

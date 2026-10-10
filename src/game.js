@@ -6,9 +6,10 @@ import { Player } from './player.js';
 import { Input } from './input.js';
 import { AIR, BLOCKS, HOTBAR, createAtlas, blockIcon } from './blocks.js';
 import { Settings } from './settings.js';
+import { DistantTerrain } from './lod.js';
+import { Sky, HORIZON } from './sky.js';
 
 const REACH = 5;
-const SKY = 0x9ccbf2;
 
 // Voxel raycast (Amanatides & Woo). Returns the first solid block within
 // `max` and the empty block in front of the face that was hit.
@@ -46,8 +47,9 @@ export class Game {
     this.renderer = renderer;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(SKY);
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
+    this.scene.background = new THREE.Color(HORIZON);
+    this.sky = new Sky(this.scene);
+    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     this.camera.rotation.order = 'YXZ';
     this.baseFov = 75;
 
@@ -58,7 +60,8 @@ export class Game {
     this.seed = Number.isFinite(seedParam) ? seedParam : 20261010;
     this.settings = new Settings();
     this.world = new World(this.scene, atlas.texture, this.settings.get('renderDistance'), this.seed);
-    this.scene.fog = new THREE.Fog(SKY, 1, 2);
+    this.scene.fog = new THREE.Fog(HORIZON, 1, 2);
+    this.lod = new DistantTerrain(this.scene, this.world, this.seed);
     this.player = new Player(this.world, 0.5, this.world.surfaceHeight(0, 0) + 1, 0.5);
     this.input = new Input(renderer.domElement);
     this._applySettings();
@@ -118,9 +121,21 @@ export class Game {
     const s = this.settings;
     const rd = s.get('renderDistance');
     this.world.setRenderDistance(rd);
-    // Fog hides the edge of the loaded area.
-    this.scene.fog.near = rd * 16 * 0.6;
-    this.scene.fog.far = rd * 16 * 0.95;
+    const lodRange = s.get('distantTerrain');
+    this.lod.setRange(lodRange);
+    this.lod.setDetail(s.get('lodDetail'));
+    // Distant terrain isn't needed where real chunks always cover the ground.
+    this.lod.setInnerRadius(Math.max(0, (rd - 2) * 16));
+    // Fog only fades out the very edge of what's drawn.
+    const view = lodRange > 0 ? lodRange : rd * 16;
+    if (s.get('fog')) {
+      this.scene.fog.near = lodRange > 0 ? view * 0.6 : view * 0.7;
+      this.scene.fog.far = lodRange > 0 ? view : view * 0.95;
+    } else {
+      this.scene.fog.near = this.scene.fog.far = 1e9;
+    }
+    this.camera.far = Math.max(1000, view * 1.4 + 300);
+    this.camera.updateProjectionMatrix();
     this.baseFov = s.get('fov');
     this.player.sensitivity = s.get('sensitivity') / 100;
     this.player.invertY = s.get('invertY');
@@ -149,6 +164,7 @@ export class Game {
       this._hotbarInput();
     }
     this.world.update(player.pos.x, player.pos.z);
+    this.lod.update(player.pos.x, player.pos.z);
 
     this.camera.position.set(player.pos.x, player.eyeY, player.pos.z);
     this.camera.rotation.set(player.pitch, player.yaw, 0);
@@ -159,6 +175,7 @@ export class Game {
     }
 
     this._updateTarget();
+    this.sky.update(this.camera);
     this.renderer.render(this.scene, this.camera);
     this._updateHud(dt);
     input.endFrame();
@@ -245,6 +262,10 @@ export class Game {
       this.ui.debug.textContent =
         `${this.fps} fps · XYZ ${p.pos.x.toFixed(1)} ${p.pos.y.toFixed(1)} ${p.pos.z.toFixed(1)} · ` +
         `${region} · ${this.world.loadedCount} chunks · ${state} · seed ${this.seed}`;
+      if (this.lod.range > 0) {
+        const l = this.lod.stats;
+        this.ui.debug.textContent += ` · LOD ${l.shown} sections, ${(l.vertices / 1e6).toFixed(2)}M verts` + (l.queued || l.pending ? `, ${l.queued + l.pending} building` : '');
+      }
     }
   }
 
